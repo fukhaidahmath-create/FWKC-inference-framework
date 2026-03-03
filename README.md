@@ -31,7 +31,7 @@ The repository is organized according to the methodological stages:
 ---
  Reproducibility
 
-- Software: R (version 4.x.x)
+- Software: R (version 4.4)
 - Key packages: brms, cmdstanr, randomForest, tidyverse
 - Random seed: 12345
 - Number of bootstrap replicates: 500
