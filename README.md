@@ -35,7 +35,7 @@ The repository is organized according to the methodological stages:
 - Key packages: brms, cmdstanr, randomForest, tidyverse
 - Random seed: 12345
 - Number of bootstrap replicates: 500
-- Number of Monte Carlo pseudo-raters: 500
+- Number of Monte Carlo pseudo-raters: 1000
 
 All simulations are fully reproducible given the fixed random seed.
 
