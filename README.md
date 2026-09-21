@@ -10,7 +10,7 @@ described in the manuscript:
 
 The current repository version is the reviewer-priority implementation:
 
-**v1.1 reviewer-priority**
+**v1.1.1 reviewer-priority release.**
 
 Main script:
 
