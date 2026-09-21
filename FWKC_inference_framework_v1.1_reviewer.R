@@ -4,9 +4,9 @@
 # PURPOSE
 # -------
 # Deadline-oriented reviewer-response run derived from the validated V25 engine.
-# It REUSES the already completed V25 same-prior Gibbs/HMC cross-check and the
-# completed V25 real-data c-grid (B=499) from run_publication, then spends the
-# remaining compute budget on the reviewer-critical independent-DGM evidence.
+# It REUSES the completed V25 same-prior Gibbs/HMC cross-check and real-data
+# c-grid (B=499) when those artifacts are supplied; on a new reviewer computer,
+# the identical high-resolution components are recomputed locally if absent.
 #
 # IMPORTANT SCIENTIFIC STATUS
 # ---------------------------
@@ -21,7 +21,7 @@
 #   is weakened or relabelled merely to force a PASS.
 # - V27 two-day target preserves the reviewer-critical full grid and M=120 coverage design.
 # - Speed is obtained by lower baseline n_mc, no thinning, lighter secondary tiers,
-#   and reuse of already completed V25 HMC/real-data results.
+#   and reuse of completed V25 HMC/real-data results when available.
 # - No claim of maximum-precision publication readiness is made by this profile.
 ###############################################################################
 
@@ -151,7 +151,7 @@ options(warn = 1)
 # 1) DEPENDENCIES
 ###############################################################################
 
-required_packages <- c("readxl", "openxlsx", "randomForest")
+required_packages <- c("readxl", "openxlsx", "randomForest", "posterior")
 missing_packages <- required_packages[
   !vapply(required_packages, requireNamespace, logical(1), quietly = TRUE)
 ]
@@ -174,18 +174,57 @@ suppressPackageStartupMessages({
 # 2) CONFIGURATION
 ###############################################################################
 
-# Prefer a stable non-Documents location on the current Windows workstation when
-# available, because the observed v17 failure occurred under C:/Users/.../Documents.
-# Users can override this without editing the script by setting FWKC_OUTPUT_BASE.
-fwkc_output_base <- Sys.getenv("FWKC_OUTPUT_BASE", unset = "")
-if (!nzchar(fwkc_output_base)) {
-  preferred_candidates <- c(
-    "D:/phd/paper",
-    getwd()
-  )
-  usable <- preferred_candidates[vapply(preferred_candidates, dir.exists, logical(1))]
-  fwkc_output_base <- if (length(usable) > 0L) usable[1] else getwd()
+# Portable repository root detection.
+# The reviewer does NOT need the author's local drive/path. The script uses the
+# directory containing this .R file when possible, with getwd() as a safe fallback.
+detect_fwkc_script_dir <- function() {
+  args <- commandArgs(trailingOnly = FALSE)
+  file_arg <- grep("^--file=", args, value = TRUE)
+  if (length(file_arg) > 0L) {
+    p <- sub("^--file=", "", file_arg[1L])
+    if (nzchar(p) && file.exists(p)) {
+      return(dirname(normalizePath(p, winslash = "/", mustWork = TRUE)))
+    }
+  }
+
+  fr <- sys.frames()
+  if (length(fr) > 0L) {
+    for (i in rev(seq_along(fr))) {
+      of <- fr[[i]]$ofile
+      if (!is.null(of) && length(of) == 1L && nzchar(of) && file.exists(of)) {
+        return(dirname(normalizePath(of, winslash = "/", mustWork = TRUE)))
+      }
+    }
+  }
+
+  normalizePath(getwd(), winslash = "/", mustWork = TRUE)
 }
+
+fwkc_project_root <- detect_fwkc_script_dir()
+
+# Optional override for output location. Otherwise results are written beside the
+# repository/script, making the code portable across Windows, macOS and Linux.
+fwkc_output_base <- Sys.getenv("FWKC_OUTPUT_BASE", unset = "")
+if (!nzchar(fwkc_output_base)) fwkc_output_base <- fwkc_project_root
+dir.create(fwkc_output_base, recursive = TRUE, showWarnings = FALSE)
+fwkc_output_base <- normalizePath(fwkc_output_base, winslash = "/", mustWork = TRUE)
+
+# Optional input path supplied without editing the code.
+fwkc_input_env <- Sys.getenv("FWKC_INPUT_PATH", unset = "")
+
+# Optional location of a completed V25 run. If not supplied, the script searches
+# portable locations inside/beside the repository. If the required V25 artifacts
+# are absent, reviewer_priority automatically recomputes the same-prior HMC audit
+# and the B=499 real-data grid rather than depending on the author's filesystem.
+fwkc_v25_env <- Sys.getenv("FWKC_V25_SOURCE_DIR", unset = "")
+v25_candidates <- unique(c(
+  if (nzchar(fwkc_v25_env)) fwkc_v25_env else character(0),
+  file.path(fwkc_project_root, "v25_reference", "run_publication"),
+  file.path(fwkc_project_root, "FWKC_FINAL_V25_OFFICIAL_EFFICIENT_RESULTS", "run_publication"),
+  file.path(fwkc_output_base, "FWKC_FINAL_V25_OFFICIAL_EFFICIENT_RESULTS", "run_publication")
+))
+v25_existing <- v25_candidates[vapply(v25_candidates, dir.exists, logical(1))]
+fwkc_v25_source_dir <- if (length(v25_existing) > 0L) v25_existing[1L] else v25_candidates[1L]
 
 config <- list(
   # Reproducibility / provenance
@@ -201,7 +240,8 @@ config <- list(
   # layers, with explicit stability/QC gates. "strict_max_precision" restores the
   # heavier v25 publication settings.
   publication_profile = "efficient_official",  # efficient_official | strict_max_precision
-  input_path = NA_character_,
+  project_root = fwkc_project_root,
+  input_path = if (nzchar(fwkc_input_env)) fwkc_input_env else NA_character_,
   output_root = file.path(fwkc_output_base, "FWKC_FINAL_V27_REVIEWER_2DAY_STRONG_RESULTS"),
   output_dir = NA_character_,  # derived from run_mode below
   resume = TRUE,
@@ -217,13 +257,13 @@ config <- list(
   # rerunning the identical script reuses only signature-matched PASS checks and continues.
   publication_preflight_auto = FALSE,
 
-  # V26 continuation: reuse only COMPLETED, high-precision V25 stages.
-  reviewer_priority_source_dir = file.path(
-    fwkc_output_base, "FWKC_FINAL_V25_OFFICIAL_EFFICIENT_RESULTS", "run_publication"
-  ),
-  reviewer_priority_require_v25_reuse = TRUE,
-  reviewer_priority_reuse_bayes_crosscheck = TRUE,
-  reviewer_priority_reuse_real_data = TRUE,
+  # Reviewer-portable V27 continuation.
+  # Reuse completed V25 stages when supplied/found; otherwise recompute the same
+  # high-resolution components locally, so no author-specific path is required.
+  reviewer_priority_source_dir = fwkc_v25_source_dir,
+  reviewer_priority_require_v25_reuse = FALSE,
+  reviewer_priority_reuse_bayes_crosscheck = TRUE,  # auto-resolved below
+  reviewer_priority_reuse_real_data = TRUE,         # auto-resolved below
   reviewer_priority_target_days = 2,
 
   # Resilient output I/O for long Windows/network runs (execution-only).
@@ -624,7 +664,7 @@ if (config$run_mode == "test") {
   config$n_mc <- 150L
 
   # More efficient Gibbs schedule: no thinning.
-  # Old 7-day schedule retained only (450-150)/2 = 150 draws/chain.
+  # Previous longer-run schedule retained only (450-150)/2 = 150 draws/chain.
   # This schedule retains (400-100)/1 = 300 draws/chain with fewer iterations.
   config$bayes_iter <- 400L
   config$bayes_burn <- 100L
@@ -652,8 +692,8 @@ if (config$run_mode == "test") {
   config$anchor_bridge_n_mc <- 150L
 
   # Non-circular robustness: stratified cap preserves all six DGM families.
-  config$robustness_M <- 20L
-  config$robustness_B <- 29L
+  config$robustness_M <- 40L
+  config$robustness_B <- 49L
   config$robustness_scenario_cap <- 18L
 
   # Preserve ALL 34 sensitivity families on three prespecified stress scenarios.
@@ -681,7 +721,7 @@ if (config$run_mode == "test") {
   config$require_bayes_crosscheck_in_publication <- FALSE
   config$require_bayes_convergence <- TRUE
 
-  # FIX for the configuration-validation error seen in V26:
+  # FIX for the configuration-validation error seen in the previous development version:
   # these HMC settings are unused in reviewer_priority because V25 HMC is reused,
   # but they are nevertheless kept internally valid so validate_config() passes.
   config$bayes_crosscheck_brms_iter <- 600L
@@ -841,6 +881,63 @@ if (config$run_mode == "test") {
     stop("Unknown publication_profile: ", config$publication_profile,
          ". Use 'efficient_official' or 'strict_max_precision'.")
   }
+}
+
+# ---------------- Reviewer-portable dependency resolution ----------------
+# Reuse V25 artifacts when available. Otherwise reproduce those components
+# locally using the same model/checks. This is execution portability only; the
+# primary reviewer-priority statistical design is unchanged.
+if (identical(config$run_mode, "reviewer_priority")) {
+  v25_stage1 <- file.path(
+    config$reviewer_priority_source_dir,
+    "stage_archive", "stage_01_validation_bayes.rds"
+  )
+  v25_stage2 <- file.path(
+    config$reviewer_priority_source_dir,
+    "stage_archive", "stage_02_real_data.rds"
+  )
+
+  config$reviewer_priority_reuse_bayes_crosscheck <- file.exists(v25_stage1)
+  config$reviewer_priority_reuse_real_data <- file.exists(v25_stage2)
+
+  if (!isTRUE(config$reviewer_priority_reuse_bayes_crosscheck)) {
+    config$run_bayes_engine_crosscheck <- TRUE
+    config$require_bayes_crosscheck_in_publication <- FALSE
+
+    needed_hmc <- c("cmdstanr", "posterior")
+    missing_hmc <- needed_hmc[
+      !vapply(needed_hmc, requireNamespace, logical(1), quietly = TRUE)
+    ]
+    cmdstan_ok <- FALSE
+    if (length(missing_hmc) == 0L) {
+      cmdstan_ver <- tryCatch(
+        cmdstanr::cmdstan_version(error_on_NA = FALSE),
+        error = function(e) NA_character_
+      )
+      cmdstan_ok <- length(cmdstan_ver) > 0L && all(!is.na(cmdstan_ver))
+    }
+    if (length(missing_hmc) > 0L || !cmdstan_ok) {
+      stop(
+        "No reusable V25 HMC cross-check artifact was found at:\n  ",
+        v25_stage1,
+        "\nTo run reviewer_priority on a new computer, either:\n",
+        "  (1) place the completed V25 run under v25_reference/run_publication, or set FWKC_V25_SOURCE_DIR; OR\n",
+        "  (2) install cmdstanr + posterior and configure CmdStan so the same-prior HMC audit can be recomputed.\n",
+        if (length(missing_hmc) > 0L)
+          paste0("Missing R package(s): ", paste(missing_hmc, collapse = ", "), "\n")
+        else
+          "CmdStan is not configured.\n"
+      )
+    }
+  }
+
+  message(
+    "FWKC reviewer portability preflight: project_root=", config$project_root,
+    "\n  V25 source=", config$reviewer_priority_source_dir,
+    "\n  reuse HMC cross-check=", config$reviewer_priority_reuse_bayes_crosscheck,
+    "\n  reuse real-data grid=", config$reviewer_priority_reuse_real_data,
+    "\n  input=", if (is.na(config$input_path)) "<auto/prompt>" else config$input_path
+  )
 }
 
 # Isolate all outputs/checkpoints by run mode. This prevents a smoke-test
@@ -2068,11 +2165,44 @@ run_scenarios_parallel_safe <- function(
 
 load_input_data <- function(cfg) {
   input_path <- cfg$input_path
+
   if (is.na(input_path) || !nzchar(input_path)) {
-    input_path <- file.choose()
+    local_candidates <- file.path(
+      cfg$project_root,
+      "data",
+      c("FWKC_input.xlsx", "FWKC_input.xls", "FWKC_input.csv",
+        "input.xlsx", "input.xls", "input.csv")
+    )
+    local_hit <- local_candidates[file.exists(local_candidates)]
+    if (length(local_hit) > 0L) input_path <- local_hit[1L]
   }
 
-  x <- read_excel(input_path)
+  if (is.na(input_path) || !nzchar(input_path)) {
+    if (interactive()) {
+      message(
+        "Select the manuscript input file. It must contain binary columns D and T."
+      )
+      input_path <- file.choose()
+    } else {
+      stop(
+        "No input dataset was found. Provide it without editing the script by either:\n",
+        "  (1) placing data/FWKC_input.xlsx (or .xls/.csv) beside the repository, or\n",
+        "  (2) setting the environment variable FWKC_INPUT_PATH to the input file.\n",
+        "The file must contain binary columns D and T."
+      )
+    }
+  }
+
+  if (!file.exists(input_path)) stop("Input file does not exist: ", input_path)
+
+  input_ext <- tolower(tools::file_ext(input_path))
+  x <- if (input_ext %in% c("xlsx", "xls")) {
+    readxl::read_excel(input_path)
+  } else if (identical(input_ext, "csv")) {
+    utils::read.csv(input_path, stringsAsFactors = FALSE, check.names = FALSE)
+  } else {
+    stop("Unsupported input format: .", input_ext, ". Use .xlsx, .xls or .csv.")
+  }
 
   if (!all(c("D", "T") %in% names(x))) {
     stop("Input file must contain columns D (gold standard) and T (test).")
@@ -7927,8 +8057,15 @@ build_reviewer_priority_qc <- function(
 
   bx_ok <- !is.null(bayes_crosscheck) && nrow(bayes_crosscheck)>0 &&
     "pass" %in% names(bayes_crosscheck) && all(as.logical(bayes_crosscheck$pass))
-  add("reused_v25_same_prior_hmc", if(bx_ok) "all_pass" else "missing_or_failed", "all PASS", bx_ok,
-      "The already completed V25 Gibbs-vs-same-prior collapsed-CmdStan HMC audit must be reused; V26 does not replace it with a cheaper audit.")
+  bx_source <- if (isTRUE(cfg$reviewer_priority_reuse_bayes_crosscheck)) {
+    "reused_verified_v25"
+  } else {
+    "recomputed_same_prior_hmc"
+  }
+  add("same_prior_hmc_crosscheck",
+      paste0(bx_source, "; ", if(bx_ok) "all_pass" else "missing_or_failed"),
+      "same-prior collapsed-CmdStan HMC; all PASS", bx_ok,
+      "The reviewer run requires the same-prior Gibbs-vs-collapsed-CmdStan HMC audit. A verified V25 result may be reused; otherwise the identical audit is recomputed.")
 
   rr <- if(!is.null(real_data)) real_data$results else NULL
   real_grid_ok <- !is.null(rr) && nrow(rr)>=9 &&
@@ -7936,9 +8073,15 @@ build_reviewer_priority_qc <- function(
   real_success <- if(real_grid_ok && all(c("Direct_failed","FWKC_failed")%in%names(rr))) {
     all(!rr$Direct_failed) && all(!rr$FWKC_failed)
   } else real_grid_ok
-  add("reused_v25_real_data_full_c_grid", if(real_grid_ok) nrow(rr) else 0,
-      "9 c values with valid inference", real_grid_ok && real_success,
-      "High-resolution V25 real-data inference (B=499) is reused rather than recomputed at reduced precision.")
+  real_source <- if (isTRUE(cfg$reviewer_priority_reuse_real_data)) {
+    "reused_verified_v25"
+  } else {
+    "recomputed_B499"
+  }
+  add("real_data_full_c_grid",
+      paste0(real_source, "; rows=", if(real_grid_ok) nrow(rr) else 0),
+      "9 c values with valid B=499 inference", real_grid_ok && real_success,
+      "The reviewer run requires the full c=0.1,...,0.9 real-data grid at B=499. A verified V25 result may be reused; otherwise it is recomputed locally at the same bootstrap resolution.")
 
   full_grid <- !is.null(main_results) && nrow(main_results)>=243 &&
     setequal(round(unique(main_results$p_true),10),round(seq(.1,.9,.1),10)) &&
@@ -8041,14 +8184,14 @@ write_reviewer_priority_gate <- function(qc, cfg) {
                   "all_reviewer_priority_qc_pass=",ok,"\n")
   if(ok) {
     safe_write_lines(c(
-      "FWKC V26 REVIEWER-PRIORITY ANALYSIS PASSED ITS PRESPECIFIED DEADLINE QC.",
+      "FWKC V27 REVIEWER-PRIORITY ANALYSIS PASSED ITS PRESPECIFIED DEADLINE QC.",
       "This flag supports a reviewer response with transparent deadline-optimized Monte-Carlo precision and explicit high-resolution sensitivity audits.",
       "It MUST NOT be represented as the V25 maximum-precision PUBLICATION_READY.flag.", stamp
     ),ready)
   } else {
     failed <- if(!is.null(qc)&&nrow(qc)>0) qc$check[!qc$pass] else "qc_unavailable"
     safe_write_lines(c(
-      "FWKC V26 REVIEWER-PRIORITY ANALYSIS NEEDS REVIEW BEFORE MANUSCRIPT USE.",
+      "FWKC V27 REVIEWER-PRIORITY ANALYSIS NEEDS REVIEW BEFORE MANUSCRIPT USE.",
       paste0("Failed checks: ",paste(failed,collapse=", ")),stamp
     ),fail)
   }
@@ -9320,7 +9463,7 @@ write_summary_workbook <- function(
 ###############################################################################
 
 main <- function(cfg) {
-  log_message("FWKC V27 reviewer-priority 7-day continuation started | run_mode=", cfg$run_mode)
+  log_message("FWKC V27 reviewer-priority 2-day continuation started | run_mode=", cfg$run_mode)
   log_message("RESULTS DIRECTORY: ", cfg$output_dir)
   log_message("EMERGENCY I/O DIRECTORY: ", io_emergency_root())
   on.exit(stop_parallel_cluster(), add = TRUE)
@@ -9370,7 +9513,7 @@ main <- function(cfg) {
   if (identical(cfg$run_mode,"reviewer_priority")) {
     nominal_mcse <- sqrt(cfg$nominal_coverage*(1-cfg$nominal_coverage)/cfg$M_dgm)
     log_message(
-      "V26 REVIEWER-PRIORITY DESIGN | full_grid=243 | M=",cfg$M_dgm,
+      "V27 REVIEWER-PRIORITY DESIGN | full_grid=243 | M=",cfg$M_dgm,
       " | B_DGM=",cfg$B_boot_dgm," | n_mc=",cfg$n_mc,
       " | Gibbs iter/burn=",cfg$bayes_iter,"/",cfg$bayes_burn,
       " | RF=",cfg$rf_ntree," | nominal coverage MCSE=",signif(nominal_mcse,5),
@@ -9395,23 +9538,21 @@ main <- function(cfg) {
   if (identical(cfg$run_mode,"reviewer_priority") &&
       isTRUE(cfg$reviewer_priority_reuse_bayes_crosscheck)) {
     src1 <- file.path(cfg$reviewer_priority_source_dir,"stage_archive","stage_01_validation_bayes.rds")
-    if (!file.exists(src1)) {
-      stop("V27 reviewer-priority requires the completed V25 stage_01_validation_bayes.rds at: ",src1)
-    }
     prior_stage1 <- readRDS(src1)
     bayes_crosscheck <- prior_stage1$bayes_crosscheck
     reuse_ok <- !is.null(bayes_crosscheck) && nrow(bayes_crosscheck)>0 &&
       "pass"%in%names(bayes_crosscheck) && all(as.logical(bayes_crosscheck$pass))
-    if (!reuse_ok) stop("Saved V25 Bayes cross-check is missing or does not contain all PASS rows. V26 refuses to substitute a cheaper check.")
+    if (!reuse_ok) stop("Saved V25 Bayes cross-check is missing or does not contain all PASS rows.")
     log_message("V27 REUSE | V25 Bayes cross-check imported | all saved c values PASS | source=",src1)
   } else {
+    log_message("V27 PORTABLE FALLBACK | recomputing the same-prior collapsed-CmdStan HMC cross-check locally.")
     bayes_crosscheck <- run_bayes_engine_crosscheck(df,cfg)
   }
 
   safe_save_rds(list(validation=validation,posterior_diag_selftest=posterior_diag_selftest,
                      bayes_crosscheck=bayes_crosscheck),
                 file.path(cfg$output_dir,"stage_archive","stage_01_validation_bayes.rds"))
-  mark_main_stage("estimand validation + reused V25 Bayes cross-check")
+  mark_main_stage("estimand validation + same-prior Bayes cross-check")
 
   preflight_flag <- file.path(cfg$output_dir, "PREFLIGHT_PASSED_RERUN_TO_CONTINUE.flag")
   if (identical(cfg$run_mode, "publication") &&
@@ -9443,9 +9584,6 @@ main <- function(cfg) {
   if (identical(cfg$run_mode,"reviewer_priority") &&
       isTRUE(cfg$reviewer_priority_reuse_real_data)) {
     src2 <- file.path(cfg$reviewer_priority_source_dir,"stage_archive","stage_02_real_data.rds")
-    if (!file.exists(src2)) {
-      stop("V27 reviewer-priority requires the completed V25 stage_02_real_data.rds at: ",src2)
-    }
     real_data <- readRDS(src2)
     rr_reuse <- if(is.list(real_data)) real_data$results else NULL
     reuse_real_ok <- !is.null(rr_reuse) && nrow(rr_reuse)>=9 &&
@@ -9457,10 +9595,11 @@ main <- function(cfg) {
       save_csv_safe(real_data$paired_tests,file.path(cfg$output_dir,"real_data","paired_tests_REUSED_V25.csv"))
     log_message("V27 REUSE | completed V25 real-data c-grid imported | rows=",nrow(rr_reuse)," | source=",src2)
   } else {
+    log_message("V27 PORTABLE FALLBACK | V25 real-data artifact not found; recomputing the full B=499 real-data c-grid locally.")
     real_data <- run_real_data(df,cfg)
   }
   safe_save_rds(real_data,file.path(cfg$output_dir,"stage_archive","stage_02_real_data.rds"))
-  mark_main_stage("real-data analysis / V25 high-resolution reuse")
+  mark_main_stage("real-data analysis / full B=499 c-grid")
 
   main_results <- run_main_simulation(df,cfg)
   safe_save_rds(main_results,file.path(cfg$output_dir,"stage_archive","stage_03_primary_simulation.rds"))
@@ -9555,7 +9694,7 @@ main <- function(cfg) {
          "Inspect PUBLICATION_QC.csv and RESULTS_NOT_REPORTABLE.flag before manuscript use.")
   }
 
-  log_message("FWKC V27 reviewer-priority 7-day continuation completed.")
+  log_message("FWKC V27 reviewer-priority 2-day continuation completed.")
   invisible(all_results)
 }
 

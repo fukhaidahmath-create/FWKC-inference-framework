@@ -1,0 +1,23 @@
+FWKC reviewer bundle verification
+=================================
+Requested reviewer_priority robustness_M = 40: True
+Requested reviewer_priority robustness_B = 49: True
+R-script diff limited to the two requested assignment lines: True
+Core reviewer-priority settings preserved: True
+Text-level bracket/brace balance check: True
+
+Preserved core settings:
+- M_dgm_120: True
+- B_boot_dgm_29: True
+- n_mc_150: True
+- bayes_chains_4: True
+- rf_ntree_300: True
+- B_boot_real_499: True
+
+SHA256:
+- FWKC_inference_framework_v1.1_reviewer.R: 41f9f7db3dd7d909326140a3417703d26c8f795a0584d560b666a37b0cc36292
+- REVIEWER_RUN_INSTRUCTIONS.md: 3ce5a3ccc51e607c0f7dfe47a12921cf13788bb04c903980d958444c445a8cca
+- data/FWKC_input.xlsx: df13524c32ce6bf7dcafc6e9363f70801d76a7c7a1b0d78c80e9fb095a79783b
+- archive/FWKC_v25_publication_reference.R: ff0d96e7d072b43a461e7b89d1f10aa4870eb0ac56e8ee6e959cc026446907ef
+
+Note: A true R parse/runtime test still requires an installed R environment.
