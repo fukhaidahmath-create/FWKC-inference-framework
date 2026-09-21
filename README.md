@@ -4,12 +4,11 @@ This repository provides a reproducible implementation of the FWKC
 (Finite-Sample Weighted Kappa Coefficient) agreement inference framework
 described in the manuscript:
 
-**"A Finite-Sample Inferential Framework for the Weighted Kappa Coefficient
-(FWKC) in Binary Diagnostic Agreement Studies"**
+**"A Finite-Sample Inferential Framework for the Weighted Kappa Coefficient (FWKC) in Binary Diagnostic Agreement Studies"**
 
 ## Current Version
 
-The current repository version is the reviewer-priority update:
+The current repository version is the reviewer-priority implementation:
 
 **v1.1 reviewer-priority**
 
@@ -17,8 +16,8 @@ Main script:
 
 [`FWKC_inference_framework_v1.1_reviewer.R`](FWKC_inference_framework_v1.1_reviewer.R)
 
-This version is derived from the validated V25 publication engine and is
-configured for reviewer-response analyses under a limited computational
+This implementation is derived from the validated V25 publication engine and
+is configured for reviewer-response analyses under a limited computational
 time budget.
 
 It is not intended to replace the maximum-precision V25 publication preset.
@@ -58,42 +57,53 @@ simulation grid:
 - Gibbs iterations: `400`
 - Burn-in: `100`
 - Thinning: `1`
+- Robustness repetitions: `robustness_M = 40`
+- Robustness bootstrap: `robustness_B = 49`
+- Real-data bootstrap: `B_boot_real = 499`
 
 Higher-resolution bootstrap and Monte Carlo settings are retained in
 prespecified sensitivity analyses.
 
 The reviewer-priority configuration is a deadline-oriented computational
-profile. It is not designated as the maximum-precision publication preset.
+profile and is not designated as the maximum-precision publication preset.
 
-## Relationship to V25
+## Input Data
 
-The reviewer-priority v1.1 workflow is designed to reuse completed,
-high-resolution V25 validation components rather than recomputing them.
+The manuscript input dataset is provided in:
 
-In particular, it reuses:
+`data/FWKC_input.xlsx`
 
-- the completed same-prior Gibbs versus collapsed-CmdStan-HMC cross-check;
-- the completed V25 real-data `c = 0.1, ..., 0.9` analysis.
+The input file contains the binary variables:
 
-The default configuration therefore expects a completed V25 publication
-results directory.
+- `D`: reference/gold-standard status
+- `T`: diagnostic test status
 
-By default, the source directory is constructed as:
+Both variables are coded as `0/1`.
 
-`FWKC_FINAL_V25_OFFICIAL_EFFICIENT_RESULTS/run_publication`
+The reviewer script automatically searches for the input dataset within the
+repository. An alternative input path can also be supplied through the
+`FWKC_INPUT_PATH` environment variable.
 
-under the configured `FWKC_OUTPUT_BASE`.
 
-Users running the reviewer-priority profile on another system should set
-`FWKC_OUTPUT_BASE` or modify `reviewer_priority_source_dir` accordingly.
+## Software Requirements
 
-## Repository Structure
+The core R packages used by the reviewer-priority script are:
 
-The repository currently contains:
+- `readxl`
+- `openxlsx`
+- `randomForest`
+- `posterior`
 
-```text
-FWKC-inference-framework/
-├── FWKC_inference_framework_v1.1_reviewer.R
-├── README.md
-├── LICENSE
-└── .gitignore
+For local recomputation of the same-prior HMC cross-check, the following are
+also required:
+
+- `cmdstanr`
+- CmdStan
+
+## Running the Analysis
+
+Clone or download the repository and run the main script from R or RStudio:
+
+```r
+source("FWKC_inference_framework_v1.1_reviewer.R")
+
