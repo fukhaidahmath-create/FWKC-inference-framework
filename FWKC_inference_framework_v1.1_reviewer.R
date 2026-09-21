@@ -2167,11 +2167,18 @@ load_input_data <- function(cfg) {
   input_path <- cfg$input_path
 
   if (is.na(input_path) || !nzchar(input_path)) {
-    local_candidates <- file.path(
-      cfg$project_root,
-      "data",
-      c("FWKC_input.xlsx", "FWKC_input.xls", "FWKC_input.csv",
-        "input.xlsx", "input.xls", "input.csv")
+    local_candidates <- c(
+      file.path(
+        cfg$project_root,
+        "data",
+        c("FWKC_input.xlsx", "FWKC_input.xls", "FWKC_input.csv",
+          "input.xlsx", "input.xls", "input.csv")
+      ),
+      file.path(
+        cfg$project_root,
+        c("FWKC_input.xlsx", "FWKC_input.xls", "FWKC_input.csv",
+          "input.xlsx", "input.xls", "input.csv")
+      )
     )
     local_hit <- local_candidates[file.exists(local_candidates)]
     if (length(local_hit) > 0L) input_path <- local_hit[1L]
@@ -2186,7 +2193,7 @@ load_input_data <- function(cfg) {
     } else {
       stop(
         "No input dataset was found. Provide it without editing the script by either:\n",
-        "  (1) placing data/FWKC_input.xlsx (or .xls/.csv) beside the repository, or\n",
+        "  (1) placing FWKC_input.xlsx in the repository root or data/ directory, or\n",
         "  (2) setting the environment variable FWKC_INPUT_PATH to the input file.\n",
         "The file must contain binary columns D and T."
       )
